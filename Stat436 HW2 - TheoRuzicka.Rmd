@@ -1,0 +1,127 @@
+---
+title: "hw2"
+author: "Theo Ruzicka"
+date: "2024-03-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+###install.packages('rsconnect')
+###library(rsconnect)
+###rsconnect::deployApp()
+library(tidyverse)
+library(markdown)
+library(dplyr)
+library(tsibble)
+library(feasts)
+library(plotly)
+library(slider)
+library(shiny)
+theme_set(theme_bw())
+```
+
+```{r}
+species = read.csv("~/Documents/Stat436/hw2_TheoRuzicka/AntarcticAliens_dataset.csv")
+```
+
+Cleaning up dataset:
+```{r}
+species = species %>% 
+###Filtering out irrelevant columns
+  select(-recordID, -verbatimIdentification, -acceptedNameUsage, -locationID, -locationRemarks, -countryCode_alpha3, -occurrenceStatus, -occurrenceRemarks, -establishmentMeans, -eradicationReference, -eradicationYear, -estimatedIntroductionDate, -firstRecordReference, -firstPublishedRecord, -invasiveReference) %>%
+###Filtering to include only those species marked as invasive, those that haven't been eradicated, and the years where the first observed record was known
+  filter(isInvasive == "yes", eradicationStatus != "eradicated" & eradicationStatus!="failed to establish or died out", firstObservationRecord !="")
+```
+
+
+```{r}
+species_1800s = species %>%
+  filter(firstObservationRecord <= 1901)
+
+species_1900s = species %>%
+  filter(firstObservationRecord >=1901 & firstObservationRecord <= 1951)
+
+species_1950s = species %>%
+  filter(firstObservationRecord >= 1951 & firstObservationRecord <= 2001)
+
+species_2000s = species %>%
+  filter(firstObservationRecord >= 2001)
+```
+
+
+```{r}
+ui = fluidPage(
+  titlePanel("Invasive Alien Species of Antarctica and the Southern Ocean Islands"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("time_period", "Select Time Period:",
+                  choices = c("1800s", "1900s", "1950s", "2000s")),
+      selectInput("species_dropdown", "Select Species:", choices = NULL),  
+    ),
+    mainPanel(
+      plotOutput("timeline", height = "850px"), 
+      br(),
+      h4("Selected Species Information:"),
+      verbatimTextOutput("species_info")
+    )
+  )
+)
+
+
+server = function(input, output, session) {
+  
+  observeEvent(input$time_period, {
+    species = switch(input$time_period,
+                      "1800s" = species_1800s,
+                      "1900s" = species_1900s,
+                      "1950s" = species_1950s,
+                      "2000s" = species_2000s)
+    updateSelectInput(session, "species_dropdown", choices = unique(species$species))
+  })
+  
+  
+  output$timeline = renderPlot({
+    species = switch(input$time_period,
+                      "1800s" = species_1800s,
+                      "1900s" = species_1900s,
+                      "1950s" = species_1950s,
+                      "2000s" = species_2000s)
+    
+    ggplot(species, aes(x = firstObservationRecord, y = reorder(species, firstObservationRecord))) +
+      geom_point(size = 3) +
+      labs(title = paste("Timeline of First Observations of Invasive Alien Species in the", input$time_period),
+           x = "Date of First Observation",
+           y = "Species") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1),
+            axis.text.y = element_text(size = 10.5))  
+  })
+  
+  
+  output$species_info = renderPrint({
+    req(input$time_period, input$species_dropdown)
+    species_info = switch(input$time_period,
+                           "1800s" = species_1800s,
+                           "1900s" = species_1900s,
+                           "1950s" = species_1950s,
+                           "2000s" = species_2000s) %>%
+      filter(species == input$species_dropdown)
+    paste("Species:", unique(species_info$species), "   ",
+          "Observation Year:", unique(species_info$firstObservationRecord), "   ",
+          "Class:", unique(species_info$class), "   ",
+          "Phylum:", unique(species_info$phylum), "   ",
+          "Location:", unique(species_info$locality))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+
+
+
+
